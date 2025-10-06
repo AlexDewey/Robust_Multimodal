@@ -1,6 +1,7 @@
-# Multi-Modal Medical Imaging Classification
+# Multi-Modal Model Code
 
-A robust machine learning framework for medical image classification.
+1. A bidirectional cross-attention machine learning framework for medical image classification.
+2. A robust imputation and classification pipeline for tabular datasets.
 
 ## Overview
 
