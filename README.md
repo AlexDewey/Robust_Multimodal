@@ -1,6 +1,7 @@
-# Multi-Modal Medical Imaging Classification
+# Multi-Modal Model Code
 
-A robust machine learning framework for medical image classification.
+1. A bidirectional cross-attention machine learning framework for medical image classification.
+2. A robust imputation and classification pipeline for tabular datasets.
 
 ### Prerequisites
 - Python 3 with conda
@@ -51,3 +52,6 @@ This repository contains two primary analysis pipelines:
 - **Flexible Configuration**: Easy experimentation through configuration variables
 
 
+# Create conda environment
+conda env create -f conda_env.yml
+conda activate <env-name>
