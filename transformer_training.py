@@ -251,7 +251,60 @@ def add_file_path(df):
     reduced_pa_df = pd.DataFrame(valid_rows).reset_index(drop=True)
     return reduced_pa_df
 
-def main(threshold_setting, seed=0):
+def main(threshold_setting: float,
+         seed: int = 0) -> float:
+    """
+    Train and evaluate a multimodal Vision Transformer for medical image classification.
+    
+    Implements a complete deep learning pipeline for chest X-ray disease classification
+    using both imaging (CXR) and tabular (lab values) data. Supports multiple experimental
+    modes including training, evaluation, hyperparameter search, and fine-tuning.
+    
+    The function handles class imbalance through data filtering and resampling,
+    ensuring the incomplete data distribution matches the complete data distribution. Supports
+    bootstrapped validation for robust performance estimation.
+
+    Returns
+    -------
+    float
+        Best validation AUROC achieved during hyperparameter search (only when param_search=True).
+        Returns None for training/evaluation modes.
+
+    Configuration Variables (Edit in Function Body)
+    ------------------------------------------------
+    data_training : str, default="none"
+        Training data mode:
+        - "incomplete": Train on incomplete data (rows below completeness threshold)
+        - "training": Train on complete data split
+        - "none": Skip training, load pre-trained weights for evaluation
+    
+    data_testing : str, default="validation"
+        Evaluation data split:
+        - "validation": Evaluate on validation split with bootstrapping
+        - "test": Evaluate on held-out test split
+    
+    experiment_name : str, default="cross_att_small_tokens_transformer_finetune_MICE-DT_finetune"
+        Unique identifier for saving/loading model weights.
+        Format: {architecture}_{imputation}_{finetuning}
+        Weights saved to: ./data/model_weights/{experiment_name}_{disease}.pt
+    
+    fine_tuning_base : str, default="none"
+        Base experiment name for transfer learning:
+        - "none": Train from scratch
+        - "{experiment_name}": Load weights from specified experiment for fine-tuning
+    
+    param_search : bool, default=False
+        Hyperparameter search mode:
+        - False: Standard training/evaluation with fixed hyperparameters
+        - True: Random search over hyperparameter grid (10 iterations)
+    
+    best_disease_dict : dict
+        Disease-specific configuration mapping disease names to [threshold, imputation, model]:
+        - threshold (float): Completeness threshold for this disease
+        - imputation (str): Not currently used (legacy parameter)
+        - model (str): Not currently used (legacy parameter)
+        Example: {"No_Finding": [0.65, 'mean', 'BT']}
+    """
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)

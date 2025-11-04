@@ -16,14 +16,14 @@ def normalize_distribution(values, bins=50):
     hist += 1e-10  # Avoid zero probabilities
     return hist / hist.sum()
 
-def analyze_downstream_imputations(dataframe,
-                                   target_column,
-                                   clf_model,
-                                   iterations,
-                                   complete_rates=None,
-                                   imputers_given='all',
-                                   nan_test_cols=None,
-                                   n_splits=5):
+def analyze_downstream_imputations(dataframe: pd.DataFrame,
+                                   target_column: str,
+                                   clf_model: str,
+                                   iterations: int,
+                                   complete_rates: list[float] = None,
+                                   imputers_given: list[str] = 'all',
+                                   nan_test_cols: list[str] = None,
+                                   n_splits: int = 5):
     '''
     Evaluates the impact of various imputation methods on downstream classification performance 
     under different data completeness scenarios.
