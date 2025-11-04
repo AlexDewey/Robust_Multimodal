@@ -13,7 +13,38 @@ from sklearn.preprocessing import MinMaxScaler
 
 import MIDASpy as md
 
-def custom_impute_df(df, imputation):  
+def custom_impute_df(df: pd.DataFrame,
+                     imputation: str) -> pd.DataFrame:  
+    """
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame with missing values (NaN). Can contain any numeric data types.
+        All columns must be numeric or convertible to numeric.
+    imputation : str
+        Imputation method identifier. Must be one of:
+        - 'mean': Mean imputation (fast, simple)
+        - 'median': Median imputation (robust to outliers)
+        - 'knn': K-Nearest Neighbors imputation (k=2)
+        - 'cart': Decision Tree imputation (non-linear relationships)
+        - 'mice-lr': MICE with Linear Regression (multivariate, iterative)
+        - 'mice-dt': MICE with Decision Trees (multivariate, non-linear)
+        - 'random': Random sampling from observed values (baseline)
+        - 'midas': Deep learning VAE imputation (complex patterns)
+        - 'zero': Fill with zeros (baseline/control)
+    
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with imputed values. Maintains original:
+        - Index
+        - Column names
+        - Column order
+        - Shape (rows x columns)
+        
+        All NaN values are replaced according to the specified method.
+    """
+
 
     # If an entire column is NaN, fill it with zeros
     for i in range(df.shape[1]):  # iterate by column position, not name

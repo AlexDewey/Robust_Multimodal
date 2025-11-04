@@ -15,7 +15,63 @@ from sklearn.model_selection import StratifiedKFold
 import shap
 from collections import defaultdict
 
-def train_and_predict(model_name, imputation_method, X_train, Y_train, X_test, Y_test, random_state, grid_search_iterations):
+def train_and_predict(model_name: str,
+                      imputation_method: str,
+                      X_train: pd.DataFrame,
+                      Y_train: pd.Series,
+                      X_test: pd.DataFrame,
+                      Y_test: pd.Series,
+                      random_state: int,
+                      grid_search_iterations: int) -> dict:
+    """
+    Train a classification model with hyperparameter tuning and evaluate on test data.
+    
+    This function performs the complete ML pipeline: data imputation, class balancing,
+    hyperparameter optimization via RandomizedSearchCV, and model evaluation on test data.
+    Training and test data are imputed consistently to prevent data leakage.
+
+    Parameters
+    ----------
+    model_name : str
+        Model identifier. Supported values: "LR" (Logistic Regression), "RF" (Random Forest),
+        "DT" (Decision Tree), "XGB" (XGBoost), or other models defined in get_model_dict().
+    imputation_method : str
+        Imputation strategy for handling missing values. Passed to custom_impute_df().
+        Common values: "mean", "median", "mode", "knn", etc.
+    X_train : pd.DataFrame
+        Training feature matrix with potential missing values.
+    Y_train : pd.Series
+        Training target labels (binary classification assumed).
+    X_test : pd.DataFrame
+        Test feature matrix with potential missing values.
+    Y_test : pd.Series
+        Test target labels for evaluation.
+    random_state : int
+        Random seed for reproducibility in model initialization and cross-validation.
+    grid_search_iterations : int
+        Number of parameter settings sampled in RandomizedSearchCV (n_iter).
+    
+    Returns
+    -------
+    dict
+        Dictionary containing evaluation metrics and the trained model:
+        - "auroc" (float): Area Under ROC Curve on test set
+        - "auprc" (float): Area Under Precision-Recall Curve on test set
+        - "f1_score" (float): F1 score on test set
+        - "accuracy" (float): Accuracy on test set
+        - "model" (estimator): Best trained model from hyperparameter search
+
+    Notes
+    -----
+    - Automatically applies class balancing for imbalanced datasets:
+        * LR, RF, DT: Uses sklearn's class_weight="balanced"
+        * XGB: Uses scale_pos_weight based on class ratio
+    - Performs 5-fold cross-validation with ROC-AUC scoring during hyperparameter tuning
+    - Imputation is applied to training data first, then to combined train+test data
+      to ensure consistent feature transformations while avoiding data leakage
+    - Requires helper functions: custom_impute_df(), get_model_dict(), get_model_search_space()
+    """
+
     # Impute training data
     X_train = custom_impute_df(X_train, imputation=imputation_method)
 
@@ -173,9 +229,68 @@ def get_model_search_space():
         
     return param_grid
 
-def select_features(dataframe, target_column, R1=5, R2=5, n_splits=5, top_n_features=10):
+def select_features(dataframe: pd.DataFrame,
+                    target_column: str,
+                    R1: int=5,
+                    R2: int=5,
+                    n_splits: int=5,
+                    top_n_features: int=10) -> list:
     """
-    Select features based on SHAP values from the best model across multiple iterations.
+    Select robust features using nested cross-validation with SHAP-based importance 
+    and correlation filtering.
+    
+    Implements a rigorous feature selection pipeline that combines:
+    1. Model-agnostic feature importance via SHAP values
+    2. Nested cross-validation for unbiased feature assessment
+    3. Ensemble selection across multiple iterations
+    4. Correlation-based redundancy removal
+    
+    The method evaluates all combinations of 6 classifiers and 6 imputation strategies
+    across V-fold cross-validation, repeated R1 times. Features appearing in top_n_features
+    for ≥50% of iterations are retained, then filtered to remove highly correlated pairs
+    (keeping the feature with higher SHAP importance).
+
+
+    Parameters
+    ----------
+    dataframe : pd.DataFrame
+        Complete dataset including features and target column. May contain missing values.
+    target_column : str
+        Name of the binary target column in dataframe.
+    R1 : int, default=5
+        Number of outer iterations with different random seeds. Controls robustness
+        of feature selection (higher = more stable but slower).
+    R2 : int, default=5
+        Number of hyperparameter search iterations per model (RandomizedSearchCV n_iter).
+        Controls optimization thoroughness for each classifier.
+    n_splits : int, default=5
+        Number of folds in stratified cross-validation (V in the paper).
+    top_n_features : int, default=10
+        Number of top SHAP-ranked features to consider per fold.
+
+    Returns
+    -------
+    list
+        Selected feature names that passed both frequency threshold (≥50% of R1 iterations)
+        and correlation filtering (|r| < 0.8 or higher SHAP importance).
+
+    Models Evaluated
+    ----------------
+    - LR: Logistic Regression
+    - RF: Random Forest
+    - BT: Gradient Boosting
+    - KNN: K-Nearest Neighbors
+    - XGB: XGBoost
+    - MLP: Multi-Layer Perceptron
+    
+    Imputation Methods Evaluated
+    ----------------------------
+    - mean: Mean imputation
+    - median: Median imputation
+    - knn: K-Nearest Neighbors imputation
+    - cart: CART (Decision Tree) imputation
+    - mice-lr: MICE with Logistic Regression
+    - mice-dt: MICE with Decision Trees
     """
 
     CLASSIFIERS = ['LR', 'RF', 'BT', 'KNN', 'XGB', 'MLP']
@@ -313,9 +428,57 @@ def select_features(dataframe, target_column, R1=5, R2=5, n_splits=5, top_n_feat
 
     return k_winner_feature_subset
 
-def select_model(dataframe, target_column, R1=5, n_splits=5):
+def select_model(dataframe: pd.DataFrame,
+                 target_column: str,
+                 R1: int=5,
+                 n_splits: int=5):
     """
-    Select the best model and imputation method based on cross-validated AUROC scores.
+    Select optimal classifier and imputation method via nested cross-validation.
+    
+    Exhaustively evaluates all combinations of classifiers and imputation strategies
+    across multiple iterations of stratified cross-validation. Returns the model-imputer
+    pair with the highest mean AUROC across all folds and iterations.
+    
+    This function implements Step 2 of the paper's methodology: "Model Selection" where
+    a smaller feature subset may require different optimal models due to dimensionality
+    changes. Should be run AFTER feature selection to identify the best model for the
+    reduced feature space.
+
+    Parameters
+    ----------
+    dataframe : pd.DataFrame
+        Dataset with selected features and target column. Typically the output after
+        feature selection. May contain missing values (handled by imputation).
+    target_column : str
+        Name of the binary target column in dataframe.
+    R1 : int, default=5
+        Number of outer iterations with different random seeds. Each iteration uses
+        a different stratified k-fold split for robust model selection.
+    n_splits : int, default=5
+        Number of folds in stratified cross-validation (k in paper notation).
+        Each fold is evaluated with every model-imputer combination.
+    
+    Returns
+    -------
+    tuple (str, str)
+        Best performing (classifier, imputation_method) combination:
+        - classifier: One of ['LR', 'RF', 'BT', 'KNN', 'XGB', 'MLP']
+        - imputation_method: One of ['mean', 'median', 'knn', 'cart', 'mice-lr', 'mice-dt']
+    
+    Classifiers:
+    - LR: Logistic Regression
+    - RF: Random Forest
+    - BT: Gradient Boosting
+    - KNN: K-Nearest Neighbors
+    - XGB: XGBoost (note: 'BT' appears twice in code, likely should include XGB/MLP)
+
+    Imputation Methods:
+        - mean: Mean imputation
+        - median: Median imputation
+        - knn: K-Nearest Neighbors imputation
+        - cart: CART (Decision Tree) imputation
+        - mice-lr: MICE with Logistic Regression
+        - mice-dt: MICE with Decision Trees
     """
 
     CLASSIFIERS = ['LR', 'RF', 'BT', 'KNN', 'BT']
